@@ -2,41 +2,42 @@
 #include "SDL/SDL_image.h"
 #include <iostream>
 
-SDL_Surface* ImageLoader::GetImage(const char* path, SDL_Surface*)
+SDL_Texture* ImageLoader::GetImage(const char* path, SDL_Renderer* screen_renderer)
 {
-    if (loaded_surfaces.find(path) != loaded_surfaces.end())
+    if (loaded_textures.find(path) != loaded_textures.end())
     {
-        return loaded_surfaces[path];
+        return loaded_textures[path];
     }
     else
     {
-        SDL_Surface* raw_surface = IMG_Load(path);
-        SDL_Surface* optimized_surface = nullptr;
-        if (raw_surface == nullptr)
+        SDL_Surface* surface = IMG_Load(path);
+        SDL_Texture* texture = nullptr;
+        if (surface == nullptr)
         {
             printf("Failed to create surface, path: %s, SDL_Error: %s\n", path, SDL_GetError());
         }
         else
         {
-            optimized_surface = SDL_ConvertSurfaceFormat(raw_surface, SDL_PixelFormatEnum::SDL_PIXELFORMAT_RGBA8888, 0);
-            if (optimized_surface == nullptr)
+            texture = SDL_CreateTextureFromSurface(screen_renderer, surface);
+            if (texture == nullptr)
             {
-                printf("Unable to optimize image %s! SDL Error: %s\n", path, SDL_GetError());
+                printf("Unable to create texture from %s! SDL Error: %s\n", path, SDL_GetError());
             }
 
             //Get rid of old loaded surface
-            SDL_FreeSurface(raw_surface);
-            loaded_surfaces.emplace(path, optimized_surface);
+            SDL_FreeSurface(surface);
+            loaded_textures.emplace(path, texture);
         }
-        return optimized_surface;
+        return texture;
     }
 }
 
 void ImageLoader::UnloadAllImages()
 {
-    for (auto& pair : loaded_surfaces)
+    for (auto& pair : loaded_textures)
     {
-        SDL_FreeSurface(pair.second);
+        SDL_DestroyTexture(pair.second);
+        pair.second = nullptr;
     }
 }
 

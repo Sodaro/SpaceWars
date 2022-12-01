@@ -4,10 +4,10 @@
 
 class ImageLoader
 {
-	std::map<const char*, SDL_Surface*> loaded_surfaces;
+	std::map<const char*, SDL_Texture*> loaded_textures;
 public:
 	~ImageLoader();
 	ImageLoader() = default; 
-	SDL_Surface* GetImage(const char* path, SDL_Surface* screen_surface);
+	SDL_Texture* GetImage(const char* path, SDL_Renderer* screen_renderer);
 	void UnloadAllImages();
 };

@@ -3,6 +3,9 @@
 #include "image_loader.h"
 #include "SDL/SDL_image.h"
 #include <iostream>
+#include <vector>
+#include <string>
+#include <algorithm>
 
 constexpr int SCREEN_WIDTH = 640;
 constexpr int SCREEN_HEIGHT = 480;
@@ -10,8 +13,22 @@ constexpr int SCREEN_HEIGHT = 480;
 struct Application
 {
     SDL_Window* window = nullptr;
-    SDL_Surface* screen_surface = nullptr;
+    SDL_Renderer* renderer = nullptr;
 };
+
+struct Collider
+{
+    int x = 0;
+    int y = 0;
+    int w = 0;
+    int h = 0;
+    Collider(int x, int y) : x(x), y(y), w(16), h(16) {};
+};
+
+bool CheckOverlap(const Collider& a, const Collider& b)
+{
+    return a.x <= b.x + b.w && a.y <= b.y + b.h && a.x + a.w > b.x && a.y + a.h > b.y;
+}
 
 bool InitializeApplication(Application& app)
 {
@@ -27,6 +44,13 @@ bool InitializeApplication(Application& app)
         return false;
     }
 
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    if (renderer == nullptr)
+    {
+        printf("Failed to create renderer! SDL_Error: %s\n", SDL_GetError());
+        return false;
+    }
+
     //Initialize PNG and JPEG loading
     int imgFlags = IMG_INIT_PNG | IMG_INIT_JPG;
     if (!(IMG_Init(imgFlags) & imgFlags))
@@ -34,10 +58,9 @@ bool InitializeApplication(Application& app)
         printf("SDL_image could not initialize! SDL_image Error: %s\n", IMG_GetError());
         return false;
     }
-    SDL_Surface* surface = SDL_GetWindowSurface(window);
-    SDL_FillRect(surface, nullptr, SDL_MapRGB(surface->format, 255, 255, 255));
+    SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+    app.renderer = renderer;
     app.window = window;
-    app.screen_surface = surface;
     return true;
 }
 
@@ -45,21 +68,40 @@ int main(int, char*[])
 {
     Application app;
     ImageLoader image_loader;
+    
     if (!InitializeApplication(app))
     {
         printf("Failed to initalize application!");
         return 1;
     }
     
-    SDL_Surface* image_surface = image_loader.GetImage("./assets/cool.bmp", app.screen_surface);
-    SDL_Surface* square_surface = image_loader.GetImage("./assets/square.jpg", app.screen_surface);
-    SDL_Surface* triangle_surface = image_loader.GetImage("./assets/triangle.png", app.screen_surface);
-    SDL_Event e;
+    // unoptimized: 5000    colliders   2-3 fps
+    // optimized:   5000    colliders   250+ fps
+    // optimized:   10000   colliders   120+ fps
+    constexpr unsigned int collider_count = 10000;
+    std::vector<Collider> colliders;
+    colliders.reserve(sizeof(Collider) * collider_count);
+
+    SDL_Texture* background_texture = image_loader.GetImage("./assets/cool.bmp", app.renderer);
+    SDL_Texture* square_texture = image_loader.GetImage("./assets/square.jpg", app.renderer);
+    SDL_Texture* triangle_texture = image_loader.GetImage("./assets/triangle.png", app.renderer);
+    
     SDL_Rect triangle_dst{ 16,16,32,32 };
     SDL_Rect triangle_src{ 0,0,32,32 };
     bool is_running = true;
+
+    for (int i = 0; i < collider_count; i++)
+    {
+        int x = i % 1000;
+        int y = i / 1000;
+        colliders.emplace_back(Collider(x, y));
+    }
+
+    SDL_Event e;
+    size_t start_time = 0;
     while (is_running)
     {
+        start_time = SDL_GetPerformanceCounter();
         //Poll all the events in the event queue
         while (SDL_PollEvent(&e))
         {
@@ -69,17 +111,53 @@ int main(int, char*[])
                 break;
             }
         }
+        auto sort_pred = [](const Collider& col_a, const Collider& col_b)
+        {
+            return col_a.x < col_b.x;
+        };
 
-        SDL_BlitSurface(image_surface, NULL, app.screen_surface, NULL);
-        SDL_BlitSurface(square_surface, NULL, app.screen_surface, NULL);
-        SDL_BlitSurface(triangle_surface, &triangle_src, app.screen_surface, &triangle_dst);
-        SDL_UpdateWindowSurface(app.window);
+        std::sort(colliders.begin(), colliders.end(), sort_pred);
+
+        auto search_pred = [](const Collider& col_a, const Collider& col_b)
+        {
+            return CheckOverlap(col_a, col_b);
+        };
+        for (int i = 0; i < colliders.size(); i++)
+        {
+            int found_index = std::binary_search(colliders.begin(), colliders.end(), colliders[i], search_pred);
+            for (int j = found_index; j < colliders.size(); j++)
+            {
+                if (!CheckOverlap(colliders[i], colliders[j]))
+                {
+                    //printf("%d, %d, %d, %d", colliders[i]->x, colliders[i]->y, colliders[j]->x, colliders[j]->y);
+                    break;
+                }
+                //if (i == 0)
+                //{
+                //}
+            }
+        }
+
+        SDL_RenderClear(app.renderer);
+
+        //Render texture to screen
+        SDL_RenderCopy(app.renderer, background_texture, NULL, NULL);
+        SDL_RenderCopy(app.renderer, square_texture, NULL, NULL);
+        SDL_RenderCopy(app.renderer, triangle_texture, NULL, NULL);
+
+        //Update screen
+        SDL_RenderPresent(app.renderer);
+
+        float elapsed = (SDL_GetPerformanceCounter() - start_time) / (float)SDL_GetPerformanceFrequency();
+        printf("colliders: %s, elapsed: %f, fps: %f\n", std::to_string(colliders.size()).c_str(), elapsed, 1.0f / elapsed);
     }
 
     image_loader.UnloadAllImages();
+    SDL_DestroyRenderer(app.renderer);
     SDL_DestroyWindow(app.window);
     app.window = nullptr;
 
+    IMG_Quit();
     SDL_Quit();
     
     return 0;
