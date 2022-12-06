@@ -26,10 +26,61 @@ struct Collider
     Collider(int x, int y) : x(x), y(y), w(16), h(16) {};
 };
 
-struct Input
+enum class InputAxis
 {
-    int num_enabled_controllers = 0;
-    SDL_Joystick* joystick = nullptr;
+    Horizontal,
+    Vertical
+};
+
+constexpr SDL_Scancode USED_SCANCODES[] = {
+    SDL_SCANCODE_W, SDL_SCANCODE_A, SDL_SCANCODE_S, SDL_SCANCODE_D,
+    SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT,
+    SDL_SCANCODE_SPACE, SDL_SCANCODE_X,
+    SDL_SCANCODE_ESCAPE
+};
+
+
+class Input
+{
+    std::map<InputAxis, std::vector<SDL_Scancode>> axis_mappings;
+    std::map<SDL_Scancode, bool> key_states = {};
+public:
+    void Initialize()
+    {
+        for (int i = 0; i < sizeof(USED_SCANCODES)/sizeof(SDL_Scancode); i++)
+            key_states[USED_SCANCODES[i]] = false;
+
+        axis_mappings =
+        {
+           {InputAxis::Horizontal, {SDL_SCANCODE_RIGHT, SDL_SCANCODE_D, SDL_SCANCODE_LEFT, SDL_SCANCODE_A}},
+           {InputAxis::Vertical, {SDL_SCANCODE_DOWN, SDL_SCANCODE_S, SDL_SCANCODE_UP, SDL_SCANCODE_W}}
+        };
+    }
+
+    void Update()
+    {
+        SDL_Event e;
+        //Poll all the events in the event queue
+        while (SDL_PollEvent(&e) != 0)
+        {
+            key_states[e.key.keysym.scancode] = e.key.state;
+        }
+    }
+    int GetAxis(InputAxis axis)
+    {
+        const auto& a = axis_mappings[axis];
+        return (key_states[a[0]] | key_states[a[1]]) - (key_states[a[2]] | key_states[a[3]]);
+    };
+
+    bool IsKeyUp(SDL_Scancode scan_code)
+    {
+        return !key_states[scan_code];
+    }
+
+    bool IsKeyDown(SDL_Scancode scan_code)
+    {
+        return key_states[scan_code];
+    }
 };
 
 bool CheckOverlap(const Collider& a, const Collider& b)
@@ -71,21 +122,6 @@ bool InitializeApplication(Application& app)
     return true;
 }
 
-void UpdateInput(Input& input)
-{
-    if (SDL_NumJoysticks() < 1 && input.num_enabled_controllers > 0)
-    {
-        SDL_JoystickClose(input.joystick);
-        input.joystick = nullptr;
-        input.num_enabled_controllers = 0;
-    }
-    else if (SDL_NumJoysticks() > 0 && input.num_enabled_controllers == 0)
-    {
-        input.joystick = SDL_JoystickOpen(0);
-        input.num_enabled_controllers = 1;
-    }
-}
-
 int main(int, char*[])
 {
     Application app;
@@ -97,6 +133,8 @@ int main(int, char*[])
         printf("Failed to initalize application!");
         return 1;
     }
+
+    input.Initialize();
     
     // unoptimized: 5000    colliders   2-3 fps
     // optimized:   5000    colliders   250+ fps
@@ -122,32 +160,23 @@ int main(int, char*[])
         colliders.emplace_back(Collider(x, y));
     }
 
-    SDL_Event e;
+    
     Uint64 previous_time = SDL_GetPerformanceCounter();
     double delta_time = 0;
     
     while (is_running)
     {
+        input.Update();
         Uint64 current_time = SDL_GetPerformanceCounter();
         delta_time = (float)(current_time - previous_time) / SDL_GetPerformanceFrequency();
         previous_time = current_time;
 
         //printf("%f\n", delta_time);
-        //Poll all the events in the event queue
-        while (SDL_PollEvent(&e) != 0)
-        {
-            if (e.type == SDL_QUIT)
-            {
-                is_running = false;
-                break;
-            }
-            if (e.key.keysym.sym == SDLK_RIGHT)
-            {
 
-            }
-        }
-        triangle_dst.x += (float)(16.0 * delta_time);
-        printf("%f\n", triangle_dst.x);
+        auto horizontal = input.GetAxis(InputAxis::Horizontal);
+        auto vertical = input.GetAxis(InputAxis::Vertical);
+        triangle_dst.x += (float)(100 * delta_time * horizontal);
+        triangle_dst.y += (float)(100 * delta_time * vertical);
         //auto sort_pred = [](const Collider& col_a, const Collider& col_b)
         //{
         //    return col_a.x < col_b.x;
@@ -181,21 +210,14 @@ int main(int, char*[])
 
         //Update screen
         SDL_RenderPresent(app.renderer);
-        float elapsed = (float)(SDL_GetPerformanceCounter() - current_time) / (float)SDL_GetPerformanceFrequency();
-        printf("fps: %f\n", 1.0f / elapsed);
+        //float elapsed = (float)(SDL_GetPerformanceCounter() - current_time) / (float)SDL_GetPerformanceFrequency();
+        //printf("fps: %f\n", 1.0f / elapsed);
 
         //printf("%i joysticks were found.\n\n", SDL_NumJoysticks());
         //SDL_Delay(16);
     }
 
     image_loader.UnloadAllImages();
-
-    if (SDL_NumJoysticks() < 1 && input.num_enabled_controllers > 0)
-    {
-        SDL_JoystickClose(input.joystick);
-        input.joystick = nullptr;
-        input.num_enabled_controllers = 0;
-    }
 
     SDL_DestroyRenderer(app.renderer);
     SDL_DestroyWindow(app.window);
