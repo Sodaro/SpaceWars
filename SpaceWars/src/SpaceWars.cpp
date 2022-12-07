@@ -9,6 +9,7 @@
 #include "SDL/SDL_image.h"
 #include "common_math.h"
 #include "image_loader.h"
+#include "vector2.h"
 
 constexpr int SCREEN_WIDTH = 640;
 constexpr int SCREEN_HEIGHT = 480;
@@ -20,11 +21,10 @@ struct Application {
 };
 
 struct Collider {
-  int x = 0;
-  int y = 0;
-  int w = 0;
-  int h = 0;
-  Collider(int x, int y) : x(x), y(y), w(16), h(16){};
+  const Vector2& position;
+  const Vector2& size;
+  Collider(const Vector2& position, const Vector2& size)
+      : position(position), size(size){};
 };
 
 enum class InputAxis { Horizontal, Vertical };
@@ -75,10 +75,10 @@ class Input {
 std::map<InputAxis, std::vector<SDL_Scancode>> Input::axis_mappings = {};
 std::map<SDL_Scancode, bool> Input::key_states;
 
-bool CheckOverlap(const Collider& a, const Collider& b) {
-  return a.x <= b.x + b.w && a.y <= b.y + b.h && a.x + a.w > b.x &&
-         a.y + a.h > b.y;
-}
+// bool CheckOverlap(const Collider& a, const Collider& b) {
+//   return a.x <= b.x + b.w && a.y <= b.y + b.h && a.x + a.w > b.x &&
+//          a.y + a.h > b.y;
+// }
 
 bool InitializeApplication(Application& app) {
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) < 0) {
@@ -127,8 +127,25 @@ int main(int, char*[]) {
   // unoptimized: 5000    colliders   2-3 fps
   // optimized:   5000    colliders   250+ fps
   // optimized:   10000   colliders   120+ fps
-  constexpr unsigned int collider_count = 5000;
-  std::vector<Collider> colliders;
+
+  /*
+   * Components:
+   * * Transform
+   * * * Position
+   * * * Rotation
+   * * Velocity
+   * * Renderer
+   * * Health
+   *
+   * Systems:
+   * * PositionUpdating
+   * * TargetTracking
+   * * BulletSpawning
+   * * CollisionChecking
+   */
+
+  constexpr unsigned int entity_count = 5000;
+  Collider colliders[sizeof(Collider) * entity_count];
   colliders.reserve(sizeof(Collider) * collider_count);
 
   SDL_Texture* background_texture =
