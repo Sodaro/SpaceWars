@@ -20,7 +20,6 @@ SDL_Texture* ImageLoader::GetImage(const char* path,
         printf("Unable to create texture from %s! SDL Error: %s\n", path,
                SDL_GetError());
       }
-
       // Get rid of old loaded surface
       SDL_FreeSurface(surface);
       loaded_textures.emplace(path, texture);

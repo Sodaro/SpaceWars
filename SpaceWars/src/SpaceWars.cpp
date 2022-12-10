@@ -10,71 +10,56 @@
 #include "common_math.h"
 #include "image_loader.h"
 #include "vector2.h"
+#include "Input.h"
 
-constexpr int SCREEN_WIDTH = 640;
-constexpr int SCREEN_HEIGHT = 480;
+constexpr int SCREEN_WIDTH = 1280;
+constexpr int SCREEN_HEIGHT = 960;
+constexpr int GAME_WIDTH = 320;
+constexpr int GAME_HEIGHT = 240;
 constexpr int JOYSTICK_DEAD_ZONE = 8000;  // Analog joystick dead zone
 
 struct Application {
   SDL_Window* window = nullptr;
-  SDL_Renderer* renderer = nullptr;
+  SDL_Renderer* window_renderer = nullptr;
 };
 
 struct Collider {
-  const Vector2& position;
-  const Vector2& size;
-  Collider(const Vector2& position, const Vector2& size)
-      : position(position), size(size){};
+    float size[2];
+};
+struct Health {
+    float amount = 0.f;
+};
+struct Velocity
+{
+    float values[2];
+};
+struct Position
+{
+    float values[2];
+};
+struct RenderData
+{
+    SDL_FRect destination_rect{};
+    SDL_Texture* texture = nullptr;
+    double angle = 0;
 };
 
-enum class InputAxis { Horizontal, Vertical };
 
-constexpr SDL_Scancode USED_SCANCODES[] = {
-    SDL_SCANCODE_W,    SDL_SCANCODE_A,      SDL_SCANCODE_S,
-    SDL_SCANCODE_D,    SDL_SCANCODE_UP,     SDL_SCANCODE_DOWN,
-    SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT,  SDL_SCANCODE_SPACE,
-    SDL_SCANCODE_X,    SDL_SCANCODE_ESCAPE, SDL_SCANCODE_RETURN};
-
-class Input {
-  static std::map<InputAxis, std::vector<SDL_Scancode>> axis_mappings;
-  static std::map<SDL_Scancode, bool> key_states;
-
- public:
-  static void Initialize() {
-    for (int i = 0; i < sizeof(USED_SCANCODES) / sizeof(SDL_Scancode); i++)
-      key_states[USED_SCANCODES[i]] = false;
-
-    axis_mappings = {
-        {InputAxis::Horizontal,
-         {SDL_SCANCODE_RIGHT, SDL_SCANCODE_D, SDL_SCANCODE_LEFT,
-          SDL_SCANCODE_A}},
-        {InputAxis::Vertical,
-         {SDL_SCANCODE_DOWN, SDL_SCANCODE_S, SDL_SCANCODE_UP, SDL_SCANCODE_W}}};
-  }
-
-  static void Update() {
-    SDL_Event e;
-    // Poll all the events in the event queue
-    while (SDL_PollEvent(&e) != 0) {
-      key_states[e.key.keysym.scancode] = e.key.state;
+void SpinSprites(int start, int end, RenderData* arr, float dt)
+{
+    for (int i = start; i < end; i++)
+    {
+        arr[i].angle += (float)dt * 100.f;
     }
-  }
-  static float GetAxis(InputAxis axis) {
-    const auto& a = axis_mappings[axis];
-    return (float)((key_states[a[0]] | key_states[a[1]]) -
-                   (key_states[a[2]] | key_states[a[3]]));
-  };
+}
 
-  static bool IsKeyUp(SDL_Scancode scan_code) { return !key_states[scan_code]; }
-
-  static bool IsKeyDown(SDL_Scancode scan_code) {
-    return key_states[scan_code];
-  }
-};
-
-std::map<InputAxis, std::vector<SDL_Scancode>> Input::axis_mappings = {};
-std::map<SDL_Scancode, bool> Input::key_states;
-
+void DrawSprites(SDL_Renderer* renderer, const RenderData* arr, int count)
+{
+    for (int i = 0; i < count; i++)
+    {
+        SDL_RenderCopyExF(renderer, arr[i].texture, NULL, &arr[i].destination_rect, arr[i].angle, NULL, SDL_RendererFlip::SDL_FLIP_NONE);
+    }
+}
 // bool CheckOverlap(const Collider& a, const Collider& b) {
 //   return a.x <= b.x + b.w && a.y <= b.y + b.h && a.x + a.w > b.x &&
 //          a.y + a.h > b.y;
@@ -87,15 +72,15 @@ bool InitializeApplication(Application& app) {
   }
   SDL_Window* window =
       SDL_CreateWindow("SpaceWars", SDL_WINDOWPOS_CENTERED,
-                       SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, 0);
+                       SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_RESIZABLE);
   if (window == nullptr) {
     printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
     return false;
   }
 
-  SDL_Renderer* renderer = SDL_CreateRenderer(
-      window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-  if (renderer == nullptr) {
+  SDL_Renderer* window_renderer = SDL_CreateRenderer(
+      window, -1, SDL_RENDERER_ACCELERATED);
+  if (window_renderer == nullptr) {
     printf("Failed to create renderer! SDL_Error: %s\n", SDL_GetError());
     return false;
   }
@@ -107,21 +92,24 @@ bool InitializeApplication(Application& app) {
            IMG_GetError());
     return false;
   }
-  SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
-  app.renderer = renderer;
+  SDL_SetRenderDrawColor(window_renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+  //SDL_SetRenderDrawColor(texture_target_renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+  app.window_renderer = window_renderer;
+  //app.texture_target_renderer = texture_target_renderer;
   app.window = window;
   return true;
 }
 
 int main(int, char*[]) {
-  Application app;
+Application app;
   ImageLoader image_loader;
+  SDL_Texture* render_texture;
 
   if (!InitializeApplication(app)) {
     printf("Failed to initalize application!");
     return 1;
   }
-
+  SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
   Input::Initialize();
 
   // unoptimized: 5000    colliders   2-3 fps
@@ -130,9 +118,7 @@ int main(int, char*[]) {
 
   /*
    * Components:
-   * * Transform
-   * * * Position
-   * * * Rotation
+   * * Position
    * * Velocity
    * * Renderer
    * * Health
@@ -142,34 +128,41 @@ int main(int, char*[]) {
    * * TargetTracking
    * * BulletSpawning
    * * CollisionChecking
+   * * Rendering
    */
 
-  constexpr unsigned int entity_count = 5000;
-  Collider colliders[sizeof(Collider) * entity_count];
-  colliders.reserve(sizeof(Collider) * collider_count);
+  constexpr unsigned int entity_count = 100;
+  //Collider collider_components[sizeof(Collider) * entity_count];
+  //Position position_components[sizeof(Position) * entity_count];
+  //Velocity velocity_components[sizeof(Velocity) * entity_count];
+  //Health health_components[sizeof(Velocity) * entity_count];
+  RenderData render_data_components[entity_count];
 
-  SDL_Texture* background_texture =
-      image_loader.GetImage("./assets/cool.bmp", app.renderer);
-  SDL_Texture* square_texture =
-      image_loader.GetImage("./assets/square.jpg", app.renderer);
-  SDL_Texture* triangle_texture =
-      image_loader.GetImage("./assets/triangle.png", app.renderer);
+  render_texture = SDL_CreateTexture(app.window_renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, GAME_WIDTH, GAME_HEIGHT);
+  SDL_Texture* player_texture = image_loader.GetImage("./assets/player.png", app.window_renderer);
+  SDL_Texture* background_texture = image_loader.GetImage("./assets/background.png", app.window_renderer);
+  SDL_Texture* enemy_texture = image_loader.GetImage("./assets/enemy.png", app.window_renderer);
+  //SDL_Texture* bullet_texture = image_loader.GetImage("./assets/bullet.png", app.window_renderer);
 
-  SDL_FRect triangle_dst{0, 16, 32, 32};
-  SDL_FRect square_dst{16, 16, 32, 32};
-  SDL_Rect triangle_src{0, 0, 32, 32};
-  SDL_Rect square_src{0, 0, 32, 32};
-  bool is_running = true;
-
-  for (int i = 0; i < collider_count; i++) {
-    int x = i % 1000;
-    int y = i / 1000;
-    colliders.emplace_back(Collider(x, y));
+  render_data_components[0] = { {0,0,16,16}, player_texture, 0 };
+  for (int i = 1; i < entity_count; i++)
+  {
+      int x = i % 10;
+      int y = i / 10;
+      render_data_components[i] = { {x * 16.f, y * 8.f,16,16}, enemy_texture, 0};
   }
-
+  
   Uint64 previous_time = SDL_GetPerformanceCounter();
   double delta_time = 0;
 
+
+  //for (int i = 0; i < collider_count; i++) {
+  //  int x = i % 1000;
+  //  int y = i / 1000;
+  //  colliders.emplace_back(Collider(x, y));
+  //}
+
+  bool is_running = true;
   while (is_running) {
     Input::Update();
 
@@ -179,15 +172,27 @@ int main(int, char*[]) {
     }
 
     Uint64 current_time = SDL_GetPerformanceCounter();
-    delta_time =
-        (float)(current_time - previous_time) / SDL_GetPerformanceFrequency();
+    delta_time = (float)(current_time - previous_time) / SDL_GetPerformanceFrequency();
     previous_time = current_time;
 
-    SDL_FPoint movement_dir{Input::GetAxis(InputAxis::Horizontal),
-                            Input::GetAxis(InputAxis::Vertical)};
-    SafeNormalizePoint(movement_dir);
-    triangle_dst.x += (float)(100 * delta_time * movement_dir.x);
-    triangle_dst.y += (float)(100 * delta_time * movement_dir.y);
+    float horizontal = Input::GetAxis(InputAxis::Horizontal);
+    float vertical = Input::GetAxis(InputAxis::Vertical);
+
+    auto& player_data = render_data_components[0];
+    if (horizontal != 0)
+    {
+        player_data.angle += (float)(delta_time * 180.f * horizontal);
+    }
+    if (vertical != 0)
+    {
+        float radians = (float)player_data.angle * (float)M_PI / 180.f;
+        float facing_x = (float)std::cos(radians);
+        float facing_y = (float)std::sin(radians);
+        player_data.destination_rect.x += (float)(100 * delta_time * facing_x * vertical);
+        player_data.destination_rect.y += (float)(100 * delta_time * facing_y * vertical);
+    }
+
+    SpinSprites(1, entity_count, render_data_components, (float)delta_time);
 
     // auto sort_pred = [](const Collider& col_a, const Collider& col_b)
     //{
@@ -213,20 +218,20 @@ int main(int, char*[]) {
     //         }
     //     }
     // }
-
-    SDL_RenderClear(app.renderer);
+    SDL_SetRenderTarget(app.window_renderer, render_texture);
+    SDL_RenderClear(app.window_renderer);
 
     // Render texture to screen
-    SDL_RenderCopy(app.renderer, background_texture, NULL, NULL);
-    SDL_RenderCopyF(app.renderer, square_texture, &square_src, &square_dst);
-    SDL_RenderCopyF(app.renderer, triangle_texture, &triangle_src,
-                    &triangle_dst);
+    SDL_RenderCopy(app.window_renderer, background_texture, NULL, NULL);
+    
+    DrawSprites(app.window_renderer, render_data_components, entity_count);
 
+    SDL_SetRenderTarget(app.window_renderer, NULL);
+    SDL_RenderCopy(app.window_renderer, render_texture, NULL, NULL);
     // Update screen
-    SDL_RenderPresent(app.renderer);
-    // float elapsed = (float)(SDL_GetPerformanceCounter() - current_time) /
-    // (float)SDL_GetPerformanceFrequency(); printf("fps: %f\n", 1.0f /
-    // elapsed);
+    SDL_RenderPresent(app.window_renderer);
+    //float elapsed = (float)(SDL_GetPerformanceCounter() - current_time) / (float)SDL_GetPerformanceFrequency();
+    //printf("fps: %f\n", 1.0f / elapsed);
 
     // printf("%i joysticks were found.\n\n", SDL_NumJoysticks());
     // SDL_Delay(16);
@@ -234,7 +239,7 @@ int main(int, char*[]) {
 
   image_loader.UnloadAllImages();
 
-  SDL_DestroyRenderer(app.renderer);
+  SDL_DestroyRenderer(app.window_renderer);
   SDL_DestroyWindow(app.window);
   app.window = nullptr;
 

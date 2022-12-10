@@ -5,6 +5,7 @@
 class ImageLoader
 {
 	std::map<const char*, SDL_Texture*> loaded_textures;
+	std::map<const char*, SDL_FRect*> source_rects;
 public:
 	~ImageLoader();
 	ImageLoader() = default; 
