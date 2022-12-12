@@ -4,7 +4,8 @@
 
 #include "SDL/SDL.h"
 
-enum class InputAxis { Horizontal, Vertical };
+namespace input {
+enum class Axis { kHorizontal, kVertical };
 
 constexpr SDL_Scancode USED_SCANCODES[] = {
     SDL_SCANCODE_W,    SDL_SCANCODE_A,      SDL_SCANCODE_S,
@@ -12,8 +13,8 @@ constexpr SDL_Scancode USED_SCANCODES[] = {
     SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT,  SDL_SCANCODE_SPACE,
     SDL_SCANCODE_X,    SDL_SCANCODE_ESCAPE, SDL_SCANCODE_RETURN};
 
-class Input {
-  static std::map<InputAxis, std::vector<SDL_Scancode>> axis_mappings;
+class Handler {
+  static std::map<Axis, std::vector<SDL_Scancode>> axis_mappings;
   static std::map<SDL_Scancode, bool> key_states;
 
  public:
@@ -21,10 +22,10 @@ class Input {
     for (int i = 0; i < sizeof(USED_SCANCODES) / sizeof(SDL_Scancode); i++)
       key_states[USED_SCANCODES[i]] = false;
 
-    axis_mappings = {{InputAxis::Horizontal,
+    axis_mappings = {{Axis::kHorizontal,
                       {SDL_SCANCODE_RIGHT, SDL_SCANCODE_D, SDL_SCANCODE_LEFT,
                        SDL_SCANCODE_A}},
-                     {InputAxis::Vertical,
+                     {Axis::kVertical,
                       {
                           SDL_SCANCODE_UP,
                           SDL_SCANCODE_W,
@@ -40,7 +41,7 @@ class Input {
       key_states[e.key.keysym.scancode] = e.key.state;
     }
   }
-  static float GetAxis(InputAxis axis) {
+  static float GetAxis(Axis axis) {
     const auto& a = axis_mappings[axis];
     return (float)((key_states[a[0]] | key_states[a[1]]) -
                    (key_states[a[2]] | key_states[a[3]]));
@@ -53,5 +54,6 @@ class Input {
   }
 };
 
-std::map<InputAxis, std::vector<SDL_Scancode>> Input::axis_mappings = {};
-std::map<SDL_Scancode, bool> Input::key_states;
+std::map<Axis, std::vector<SDL_Scancode>> Handler::axis_mappings = {};
+std::map<SDL_Scancode, bool> Handler::key_states;
+}  // namespace input
