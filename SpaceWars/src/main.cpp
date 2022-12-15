@@ -33,7 +33,6 @@ class IDManager {
   static int GetNextID() { return id++; };
 };
 
-// Collider collider_components[entity_count];
 Position position_components[constants::kEntityCount]{};
 Velocity velocity_components[constants::kEntityCount]{};
 RenderData render_data_components[constants::kEntityCount]{};
@@ -115,24 +114,7 @@ bool IsOutsideView(float x, float y, float w, float h) {
          y > constants::kGameHeight;
 }
 
-std::vector<float> GetGroupBounds(int start, int last) {
-  const auto& positions = position_components;
-  auto x_pred = [&positions](const Position& a, const Position& b) {
-    return a.x < b.x;
-  };
-  auto y_pred = [&positions](const Position& a, const Position& b) {
-    return a.y < b.y;
-  };
-  auto [min_x, max_x] = std::minmax_element(position_components + start,
-                                            position_components + last, x_pred);
-  auto [min_y, max_y] = std::minmax_element(position_components + start,
-                                            position_components + last, y_pred);
-  return {min_x->x, min_y->y, max_x->x - min_x->x + 16.f,
-          max_y->y - min_y->y + 16.f};
-}
-
 void RenderCollisionGrid(SDL_Renderer* renderer) {
-  // Draw collision grid
   SDL_SetRenderDrawColor(renderer, 0x00, 0x55, 0x55, 0xFF);
   for (int i = 0; i < collision::grid_rows; i++) {
     for (int j = 0; j < collision::grid_cols; j++) {
@@ -144,27 +126,12 @@ void RenderCollisionGrid(SDL_Renderer* renderer) {
   }
 }
 
-void RenderGroupBounds(SDL_Renderer* renderer) {
-  SDL_FRect frect{};
-
-  SDL_SetRenderDrawColor(renderer, 0xFF, 0x00, 0xFF, 0xFF);
-  for (int i = 1; i <= constants::kEnemyShipCount - constants::kEnemyGroupSize;
-       i += constants::kEnemyGroupSize) {
-    auto bounds = GetGroupBounds(i, i + constants::kEnemyGroupSize);
-    frect.x = bounds[0];
-    frect.y = bounds[1];
-    frect.w = bounds[2];
-    frect.h = bounds[3];
-    SDL_RenderDrawRectF(renderer, &frect);
-  }
-}
-
 // movement system
-void AddVelocitiesToPositions(const float dt) {
+void AddVelocitiesToPositions(const float delta_time) {
   for (const auto& entity : active_entities) {
     auto id = entity.id;
-    position_components[id].x += velocity_components[id].x * dt;
-    position_components[id].y += velocity_components[id].y * dt;
+    position_components[id].x += velocity_components[id].x * delta_time;
+    position_components[id].y += velocity_components[id].y * delta_time;
   }
 }
 
@@ -212,9 +179,6 @@ void RenderGame(const Application& app, const RenderData render_data_comps[],
   SDL_RenderCopy(app.window_renderer, background_texture, NULL, NULL);
   SDL_FRect frect{};
   for (const auto& entity : active_entities) {
-    // if (render_data_comps[i].enabled == false) {
-    //   continue;
-    // }
     auto id = entity.id;
     frect.x = render_data_comps[id].position->x;
     frect.y = render_data_comps[id].position->y;
@@ -226,7 +190,6 @@ void RenderGame(const Application& app, const RenderData render_data_comps[],
   }
   if (DEBUG_ENABLED) {
     RenderCollisionGrid(app.window_renderer);
-    RenderGroupBounds(app.window_renderer);
   }
   SDL_SetRenderTarget(app.window_renderer, NULL);
   SDL_RenderCopy(app.window_renderer, render_texture, NULL, NULL);
@@ -261,80 +224,7 @@ void UpdateCollisionGrid() {
     spatial_grid.Update(entity, position_components[entity.id].x,
                         position_components[entity.id].y, 16, 16);
   }
-  // for (int i = 0; i < active_entities.size(); i++) {
-  //   spatial_grid.Update(active_entities[i], position_components[i].x,
-  //                       position_components[i].y, 16, 16);
-  // }
-  //   store entity groups in grid based on group bounds
-  //  for (int i = 1; i <= constants::kLastEnemyIndex;
-  //      i += constants::kEnemyGroupSize) {
-  //   auto bounds = GetGroupBounds(i, i + constants::kEnemyGroupSize);
-  //   if (IsOutsideView(bounds[0], bounds[1], bounds[2], bounds[3])) {
-  //     continue;
-  //   }
-  //   spatial_grid.Update(entities[i], bounds[0], bounds[1], bounds[2],
-  //                       bounds[3]);
-  // }
-  //  const auto& bullets = GetActiveEntitiesOfType(entity::Type::kBullet);
-  //  for (const auto& bullet : bullets) {
-  //    spatial_grid.Update(bullet, position_components[bullet.id].x,
-  //                        position_components[bullet.id].y, 16.f, 16.f);
-  //  }
-  //    for (int i = constants::kLastEnemyIndex + 1; i <
-  //    constants::kEntityCount;
-  //        i++) {
-  //     spatial_grid.Update(i, positions[i].x, positions[i].y, 16, 16);
-  //   }
 }
-
-// bool CheckSubCollision(const Position positions[], const SDL_FRect*
-// target_rect,
-//                        const int group_start_index,
-//                        CollisionData& collision_data)
-//
-//{
-//   SDL_FRect entity_rect{};
-//   for (int i = group_start_index;
-//        i <= group_start_index + constants::kEnemyGroupSize; i++) {
-//     entity_rect.x = positions[i].x;
-//     entity_rect.y = positions[i].y;
-//     entity_rect.w = 16.f;
-//     entity_rect.h = 16.f;
-//     if (SDL_HasIntersectionF(target_rect, &entity_rect)) {
-//       collision_data.collider_id = i;
-//       return true;
-//     }
-//   }
-//   return false;
-// }
-
-// bool CheckCollisionAgainstGroup(const SDL_FRect* target_rect,
-//                                 const entity::Entity& group,
-//                                 CollisionData& collision_data) {
-//   SDL_FRect group_rect{};
-//   auto bounds = GetGroupBounds(group.id, group.id +
-//   constants::kEnemyGroupSize); group_rect.x = bounds[0]; group_rect.y =
-//   bounds[1]; group_rect.w = bounds[2]; group_rect.h = bounds[3];
-//
-//   if (!SDL_HasIntersectionF(target_rect, &group_rect)) {
-//     return false;
-//   }
-//
-//   SDL_FRect entity_rect{};
-//   for (int i = group.id; i <= group.id; i++) {
-//     entity_rect.x = position_components[i].x;
-//     entity_rect.y = position_components[i].y;
-//     entity_rect.w = 16.f;
-//     entity_rect.h = 16.f;
-//     if (!SDL_HasIntersectionF(target_rect, &group_rect)) {
-//       continue;
-//     }
-//     collision_data.collider_id = i;
-//     return true;
-//   }
-//
-//   return false;
-// }
 
 void HandleCollisions() {
   SDL_FRect bullet_rect{};
@@ -366,6 +256,50 @@ void HandleCollisions() {
   }
 }
 
+void HandlePlayerLogic(float delta_time) {
+  static int current_bullet_index = constants::kLastEnemyIndex + 1;
+  static float shoot_cooldown = 0.1f;
+  static float shoot_timer = 0.f;
+  shoot_timer -= delta_time;
+  float horizontal = input::Handler::GetAxis(input::Axis::kHorizontal);
+  if (horizontal != 0) {
+    float angle_delta = (float)(delta_time * 60.f * horizontal);
+    render_data_components[0].angle += angle_delta;
+  }
+
+  float vertical = input::Handler::GetAxis(input::Axis::kVertical);
+  float radians = math::RadToDeg((float)render_data_components[0].angle);
+  float facing_x = (float)std::cos(radians);
+  float facing_y = (float)std::sin(radians);
+  if (vertical != 0) {
+    float new_x = (float)(60 * delta_time * facing_x * vertical);
+    float new_y = (float)(60 * delta_time * facing_y * vertical);
+    velocity_components[0].x += new_x;
+    velocity_components[0].y += new_y;
+  } else {
+    auto velocity_x = velocity_components[0].x;
+    auto velocity_y = velocity_components[0].y;
+    float new_x = (float)(30 * delta_time * math::Sign(velocity_x) * -1);
+    float new_y = (float)(30 * delta_time * math::Sign(velocity_y) * -1);
+    velocity_components[0].x += new_x;
+    velocity_components[0].y += new_y;
+  }
+  if (input::Handler::IsKeyDown(SDL_SCANCODE_SPACE) && shoot_timer <= 0) {
+    active_entities.emplace_back(entities[current_bullet_index]);
+    position_components[current_bullet_index].x = position_components[0].x;
+    position_components[current_bullet_index].y = position_components[0].y;
+    velocity_components[current_bullet_index] = {facing_x * 200.f,
+                                                 facing_y * 200.f};
+
+    render_data_components[current_bullet_index].angle =
+        (float)render_data_components[0].angle;
+    if (++current_bullet_index >= constants::kEntityCount) {
+      current_bullet_index = constants::kLastEnemyIndex + 1;
+    }
+    shoot_timer = shoot_cooldown;
+  }
+}
+
 void InitializeEnemies(SDL_Texture* texture1, SDL_Texture* texture2) {
   for (int i = 1; i <= constants::kLastEnemyIndex; i++) {
     int group = (i - 1) / constants::kEnemyGroupSize;
@@ -390,7 +324,7 @@ void InitializeBullets(SDL_Texture* texture) {
   }
 }
 
-void FlagStrayBulletsDead() {
+void FlagStrayBullets() {
   const auto& bullets = GetActiveEntitiesOfType(entity::Type::kBullet);
   for (const auto& bullet : bullets) {
     auto id = bullet.id;
@@ -456,10 +390,6 @@ int main(int, char*[]) {
   Uint64 previous_time = SDL_GetPerformanceCounter();
 
   bool is_running = true;
-  int current_bullet_index = constants::kLastEnemyIndex + 1;
-
-  float shoot_cooldown = 0.1f;
-  float shoot_timer = 0.f;
 
   while (is_running) {
     input::Handler::Update();
@@ -473,55 +403,19 @@ int main(int, char*[]) {
     }
 
     float delta_time = GetUpdatedTimeDelta(previous_time);
-    shoot_timer -= delta_time;
-
-    float horizontal = input::Handler::GetAxis(input::Axis::kHorizontal);
-    if (horizontal != 0) {
-      float angle_delta = (float)(delta_time * 60.f * horizontal);
-      render_data_components[0].angle += angle_delta;
-    }
-
-    float vertical = input::Handler::GetAxis(input::Axis::kVertical);
-    float radians = math::RadToDeg((float)render_data_components[0].angle);
-    float facing_x = (float)std::cos(radians);
-    float facing_y = (float)std::sin(radians);
-    if (vertical != 0) {
-      float new_x = (float)(60 * delta_time * facing_x * vertical);
-      float new_y = (float)(60 * delta_time * facing_y * vertical);
-      velocity_components[0].x += new_x;
-      velocity_components[0].y += new_y;
-    } else {
-      auto velocity_x = velocity_components[0].x;
-      auto velocity_y = velocity_components[0].y;
-      float new_x = (float)(30 * delta_time * math::Sign(velocity_x) * -1);
-      float new_y = (float)(30 * delta_time * math::Sign(velocity_y) * -1);
-      velocity_components[0].x += new_x;
-      velocity_components[0].y += new_y;
-    }
-    if (input::Handler::IsKeyDown(SDL_SCANCODE_SPACE) && shoot_timer <= 0) {
-      // render_data_components[current_bullet_index].enabled = true;
-      active_entities.emplace_back(entities[current_bullet_index]);
-      position_components[current_bullet_index].x = position_components[0].x;
-      position_components[current_bullet_index].y = position_components[0].y;
-      velocity_components[current_bullet_index] = {facing_x * 200.f,
-                                                   facing_y * 200.f};
-
-      render_data_components[current_bullet_index].angle =
-          (float)render_data_components[0].angle;
-      if (++current_bullet_index >= constants::kEntityCount) {
-        current_bullet_index = constants::kLastEnemyIndex + 1;
-      }
-      shoot_timer = shoot_cooldown;
-    }
-
     const auto enemies = GetActiveEntitiesOfType(entity::Type::kEnemy);
+    HandlePlayerLogic((float)delta_time);
+
     UpdateEnemyVelocities(enemies, &position_components[0]);
     AngleTowardsVelocity(enemies);
+
     AddVelocitiesToPositions((float)delta_time);
     UpdateCollisionGrid();
     HandleCollisions();
-    FlagStrayBulletsDead();
+
+    FlagStrayBullets();
     RemoveDeadEntities();
+
     RenderGame(app, render_data_components, background_texture, render_texture);
 
     PrintFPS(previous_time);
