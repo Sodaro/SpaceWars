@@ -9,6 +9,13 @@ inline float RadToDeg(float radians) { return radians * (float)M_PI / 180.f; }
 inline float GetMagnitude(const float vec[2]) {
   return sqrtf(vec[0] * vec[0] + vec[1] * vec[1]);
 }
+inline float GetMagnitude(const float x, const float y) {
+  return sqrtf(x * x + y * y);
+};
+inline float GetDistance(const float x, const float y, const float x2,
+                         const float y2) {
+  return sqrtf(x * x2 + y * y2);
+}
 
 inline bool SafeNormalize(float (&vec)[2]) {
   float length = GetMagnitude(vec);

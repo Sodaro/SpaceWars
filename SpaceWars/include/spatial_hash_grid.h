@@ -7,6 +7,7 @@
 #include "common_math.h"
 #include "constants.h"
 #include "entity.h"
+#include "hasher.h"
 
 namespace collision {
 constexpr int grid_cols = 20;
@@ -16,11 +17,11 @@ constexpr float height_offset = 16.f / constants::kGameHeight;
 constexpr float grid_tile_width = constants::kGameWidth / grid_cols;
 constexpr float grid_tile_height = constants::kGameHeight / grid_rows;
 class SpatialGrid {
-  std::unordered_map<std::string,
-                     std::unordered_set<entity::Entity, entity::Hasher>>
+  std::unordered_map<std::string, std::unordered_set<entity::Entity, Hasher>>
       cells{};
 
   std::string HashKey(int x, int y) {
+    // return std::format("{};{}", x, y);
     return std::to_string(x) + ";" + std::to_string(y);
   }
   std::vector<int> GetIndices(float x, float y, float x2, float y2) {
@@ -47,10 +48,10 @@ class SpatialGrid {
   }
 
  public:
-  std::unordered_set<entity::Entity, entity::Hasher> FindNearbyEntities(
+  std::unordered_set<entity::Entity, Hasher> FindNearbyEntities(
       std::vector<entity::Type> types_to_exclude, float x, float y, float w,
       float h) {
-    std::unordered_set<entity::Entity, entity::Hasher> entity_set = {};
+    std::unordered_set<entity::Entity, Hasher> entity_set = {};
     std::vector<int> indices = GetIndices(x, y, w, h);
     for (int i = indices[0]; i <= indices[1]; i++) {
       for (int j = indices[2]; j <= indices[3]; j++) {
@@ -70,9 +71,9 @@ class SpatialGrid {
     return entity_set;
   }
 
-  std::unordered_set<entity::Entity, entity::Hasher> FindNearbyEntitiesOfType(
+  std::unordered_set<entity::Entity, Hasher> FindNearbyEntitiesOfType(
       entity::Type type, float x, float y, float w, float h) {
-    std::unordered_set<entity::Entity, entity::Hasher> entity_set = {};
+    std::unordered_set<entity::Entity, Hasher> entity_set = {};
     std::vector<int> indices = GetIndices(x, y, w, h);
     for (int i = indices[0]; i <= indices[1]; i++) {
       for (int j = indices[2]; j <= indices[3]; j++) {

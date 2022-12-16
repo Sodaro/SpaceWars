@@ -13,6 +13,7 @@
 #include "components.h"
 #include "constants.h"
 #include "entity.h"
+#include "hasher.h"
 #include "image_loader.h"
 #include "input.h"
 #include "spatial_hash_grid.h"
@@ -38,13 +39,18 @@ Velocity velocity_components[constants::kEntityCount]{};
 RenderData render_data_components[constants::kEntityCount]{};
 std::vector<entity::Entity> entities;
 std::vector<entity::Entity> active_entities;
-std::unordered_set<entity::Entity, entity::Hasher> dead_entities;
+std::unordered_set<entity::Entity, Hasher> dead_entities;
 collision::SpatialGrid spatial_grid{};
 int IDManager::id = 0;
 
 bool DEBUG_ENABLED = false;
 
-std::vector<int> GetActiveEntitiesOfTypeIndices(entity::Type type) {
+inline bool IsOutsideView(float x, float y, float w, float h) {
+  return x + w < 0 || x > constants::kGameWidth || y + h < 0 ||
+         y > constants::kGameHeight;
+}
+
+std::vector<int> GetActiveEntitiesIndices(entity::Type type) {
   std::vector<int> matching_entity_indices;
   for (int i = 0; i < active_entities.size(); i++) {
     if (active_entities[i].type == type) {
@@ -54,11 +60,22 @@ std::vector<int> GetActiveEntitiesOfTypeIndices(entity::Type type) {
   return matching_entity_indices;
 }
 
-std::vector<entity::Entity> GetActiveEntitiesOfType(entity::Type type) {
+std::vector<entity::Entity> GetActiveEntities(entity::Type type) {
   std::vector<entity::Entity> matching_entities;
   for (int i = 0; i < active_entities.size(); i++) {
     if (active_entities[i].type == type) {
       matching_entities.emplace_back(active_entities[i]);
+    }
+  }
+  return matching_entities;
+}
+
+std::vector<entity::Entity> GetActiveEntitiesInsideView(entity::Type type) {
+  std::vector<entity::Entity> matching_entities;
+  for (const auto& entity : active_entities) {
+    auto pos = position_components[entity.id];
+    if (entity.type == type && !IsOutsideView(pos.x, pos.y, 16.f, 16.f)) {
+      matching_entities.emplace_back(entity);
     }
   }
   return matching_entities;
@@ -109,11 +126,6 @@ bool InitializeApplication(Application& app) {
   return true;
 }
 
-bool IsOutsideView(float x, float y, float w, float h) {
-  return x + w < 0 || x > constants::kGameWidth || y + h < 0 ||
-         y > constants::kGameHeight;
-}
-
 void RenderCollisionGrid(SDL_Renderer* renderer) {
   SDL_SetRenderDrawColor(renderer, 0x00, 0x55, 0x55, 0xFF);
   for (int i = 0; i < collision::grid_rows; i++) {
@@ -127,11 +139,20 @@ void RenderCollisionGrid(SDL_Renderer* renderer) {
 }
 
 // movement system
-void AddVelocitiesToPositions(const float delta_time) {
-  for (const auto& entity : active_entities) {
-    auto id = entity.id;
-    position_components[id].x += velocity_components[id].x * delta_time;
-    position_components[id].y += velocity_components[id].y * delta_time;
+void AddVelocitiesToPositions(
+    const float delta_time,
+    std::unordered_map<int, Position>& previous_positions) {
+  float dt = delta_time;
+  if (dt > 0.16f) {
+    dt = 0.16f;
+  }
+  for (int i = 0; i < active_entities.size(); i++) {
+    auto id = active_entities[i].id;
+    auto pos = position_components[id];
+    previous_positions[id].x = pos.x;
+    previous_positions[id].y = pos.y;
+    position_components[id].x += velocity_components[id].x * dt;
+    position_components[id].y += velocity_components[id].y * dt;
   }
 }
 
@@ -141,7 +162,7 @@ void AngleTowardsVelocity(const std::vector<entity::Entity>& enemies) {
     auto id = enemy.id;
     const auto& velocity = velocity_components[id];
     float angle = math::RadToDeg(atan2f(velocity.y, velocity.x));
-    render_data_components[id].angle = angle + 90.f;
+    render_data_components[id].angle = (double)(angle + 90.f);
   }
 }
 
@@ -152,12 +173,14 @@ void UpdateEnemyVelocities(const std::vector<entity::Entity>& enemies,
     auto id = enemy.id;
     float x = target_pos->x - position_components[id].x;
     float y = target_pos->y - position_components[id].y;
-    float l = sqrtf(x * x + y * y);
-    if (l == 0) {
+    float length = math::GetMagnitude(x, y);
+    if (length < 6.f) {
+      velocity_components[id].x = 0;
+      velocity_components[id].y = 0;
       continue;
     }
-    x /= l;
-    y /= l;
+    x /= length;
+    y /= length;
     velocity_components[id].x = x * 100.f;
     velocity_components[id].y = y * 100.f;
   }
@@ -212,17 +235,22 @@ void PrintFPS(Uint64 time_start_of_frame) {
   }
 }
 
-void UpdateCollisionGrid() {
-  const auto& positions = position_components;
-  spatial_grid.Update(entities[0], positions[0].x, positions[0].y, 16, 16);
-
-  for (const auto& entity : active_entities) {
-    if (IsOutsideView(position_components[entity.id].x,
-                      position_components[entity.id].y, 16.f, 16.f)) {
-      continue;
+void UpdateCollisionGrid(
+    const std::vector<entity::Entity>& enemies,
+    std::unordered_map<int, Position>& previous_positions) {
+  for (const auto& entity : enemies) {
+    auto id = entity.id;
+    auto pos = position_components[id];
+    auto prev_pos = previous_positions[id];
+    // if (IsOutsideView(position_components[id].x, position_components[id].y,
+    //                   16.f, 16.f)) {
+    //   continue;
+    // }
+    //  only update grid if enity has moved over a certain distance
+    if (math::GetDistance(pos.x, pos.y, prev_pos.x, prev_pos.y) > 8.f) {
+      spatial_grid.Update(entity, position_components[id].x,
+                          position_components[id].y, 16, 16);
     }
-    spatial_grid.Update(entity, position_components[entity.id].x,
-                        position_components[entity.id].y, 16, 16);
   }
 }
 
@@ -231,7 +259,7 @@ void HandleCollisions() {
   SDL_FRect enemy_rect{};
   CollisionData collision_data;
 
-  const auto bullets = GetActiveEntitiesOfType(entity::Type::kBullet);
+  const auto bullets = GetActiveEntities(entity::Type::kBullet);
   for (const auto& bullet : bullets) {
     auto bullet_id = bullet.id;
     bullet_rect.x = position_components[bullet_id].x;
@@ -325,7 +353,7 @@ void InitializeBullets(SDL_Texture* texture) {
 }
 
 void FlagStrayBullets() {
-  const auto& bullets = GetActiveEntitiesOfType(entity::Type::kBullet);
+  const auto& bullets = GetActiveEntities(entity::Type::kBullet);
   for (const auto& bullet : bullets) {
     auto id = bullet.id;
     auto pos = position_components[id];
@@ -392,6 +420,8 @@ int main(int, char*[]) {
   bool is_running = true;
 
   while (is_running) {
+    std::unordered_map<int, Position> previous_active_positions(
+        active_entities.size());
     input::Handler::Update();
 
     if (input::Handler::IsKeyDown(SDL_SCANCODE_ESCAPE)) {
@@ -403,14 +433,17 @@ int main(int, char*[]) {
     }
 
     float delta_time = GetUpdatedTimeDelta(previous_time);
-    const auto enemies = GetActiveEntitiesOfType(entity::Type::kEnemy);
     HandlePlayerLogic((float)delta_time);
 
+    const auto enemies = GetActiveEntities(entity::Type::kEnemy);
     UpdateEnemyVelocities(enemies, &position_components[0]);
-    AngleTowardsVelocity(enemies);
 
-    AddVelocitiesToPositions((float)delta_time);
-    UpdateCollisionGrid();
+    const auto enemies_inside_view =
+        GetActiveEntitiesInsideView(entity::Type::kEnemy);
+    AngleTowardsVelocity(enemies_inside_view);
+
+    AddVelocitiesToPositions((float)delta_time, previous_active_positions);
+    UpdateCollisionGrid(enemies_inside_view, previous_active_positions);
     HandleCollisions();
 
     FlagStrayBullets();
